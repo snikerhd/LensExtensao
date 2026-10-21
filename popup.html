@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 350px; padding: 16px; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 14px; margin: 0 0 12px; color: #f59e0b; }
+    input { width: 100%; padding: 8px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #e2e8f0; font-size: 13px; box-sizing: border-box; }
+    input:focus { outline: none; border-color: #f59e0b; }
+    button { width: 100%; padding: 10px; margin-top: 8px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; text-transform: uppercase; }
+    .btn-primary { background: #f59e0b; color: #0f172a; }
+    .btn-primary:hover { background: #d97706; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .status { margin-top: 10px; padding: 8px; border-radius: 6px; font-size: 12px; display: none; }
+    .status.visible { display: block; }
+    .status.error { background: #7f1d1d; color: #fca5a5; }
+    .status.success { background: #14532d; color: #86efac; }
+    .status.loading { background: #1e293b; color: #94a3b8; }
+    .result { margin-top: 10px; max-height: 200px; overflow-y: auto; font-size: 11px; background: #1e293b; border-radius: 6px; padding: 8px; display: none; }
+    .result.visible { display: block; }
+    .result pre { white-space: pre-wrap; word-break: break-word; color: #86efac; margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Offset RP — Lens Extractor</h1>
+  <input type="text" id="url" placeholder="https://i.gyazo.com/....png" autofocus>
+  <button class="btn-primary" id="extract">Abrir Lens &amp; Extrair</button>
+  <button class="btn-secondary" id="openSite">Abrir Calculadora</button>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "manifest_version": 2,
+  "name": "Offset RP - Lens AI Extractor",
+  "version": "3.0.0",
+  "description": "Abre Lens, extrai itens do AI Overview e envia para a calculadora OFFSET RP",
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "Extrair do Lens"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "lensextractor@offsetrp.app",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "permissions": [
+    "tabs",
+    "notifications",
+    "https://lens.google.com/*",
+    "https://www.google.com/*",
+    "https://offsetrp-calculadora.vercel.app/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://lens.google.com/*", "https://www.google.com/search*"],
+      "js": ["lens-extract.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://offsetrp-calculadora.vercel.app/*"],
+      "js": ["site-inject.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
