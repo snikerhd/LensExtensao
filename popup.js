@@ -1,34 +1,90 @@
-// popup.js — lançador. Abre o Lens; a extracção e entrega são feitas pelo
-// content script + background, sem depender deste popup (que fecha ao abrir aba).
-const status = document.getElementById("status");
-const btn = document.getElementById("extract");
+/* ============================================================================
+ * popup.js — v4.0.0
+ * Lançador: guarda a query (storage.local), marca a sessão como pendente e
+ * abre o Lens. A extração e a entrega são feitas por lens-extract.js +
+ * background.js — o popup pode fechar-se sem estragar nada.
+ * ==========================================================================*/
 
-btn.addEventListener("click", async () => {
-  const url = document.getElementById("url").value.trim();
+const DEFAULT_QUERY =
+  "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
+
+const $ = (id) => document.getElementById(id);
+const status = $("status");
+const urlInput = $("url");
+const queryInput = $("query");
+
+function showStatus(kind, html) {
+  status.className = "status visible " + kind;
+  status.innerHTML = html;
+}
+
+// carrega a query guardada (ou a predefinida) e o último link usado
+browser.storage.local.get(["lensQuery", "lastImageUrl"]).then((s) => {
+  queryInput.value = s.lensQuery || DEFAULT_QUERY;
+  if (s.lastImageUrl) urlInput.value = s.lastImageUrl;
+});
+
+$("resetQuery").addEventListener("click", () => {
+  queryInput.value = DEFAULT_QUERY;
+  browser.storage.local.set({ lensQuery: DEFAULT_QUERY });
+  showStatus("loading", "Query reposta para a predefinição.");
+});
+
+$("extract").addEventListener("click", async () => {
+  const url = urlInput.value.trim();
+  const query = queryInput.value.trim() || DEFAULT_QUERY;
+
   if (!url) {
-    status.className = "status visible error";
-    status.textContent = "Cola o link da imagem primeiro.";
+    showStatus("error", "Cola primeiro o link da imagem.");
+    urlInput.focus();
+    return;
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    showStatus("error", "Esse link não parece válido — tem de começar por http(s)://");
+    urlInput.focus();
     return;
   }
 
-  // Detectar se o URL já é uma pesquisa do Lens (google.com/search com udm=24
-  // ou source=lns) e abrir a URL diretamente. Se não for, usa o uploadbyurl
-  // como antes. Fix: sem isto, a extensão always abre uploadbyurl e o content
-  // script nunca extrai (só extrai de google.com/search).
-  const isLensSearchUrl = /google\.com\/search/.test(url) || /lens\.google\.com/.test(url);
-  let openUrl = url;
-  if (!isLensSearchUrl) {
-    openUrl = `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(url)}`;
+  const isLensSearchUrl =
+    /google\.com\/search/i.test(url) || /lens\.google\.com\//i.test(url);
+
+  const openUrl = isLensSearchUrl
+    ? url
+    : "https://lens.google.com/uploadbyurl?hl=pt-PT&url=" + encodeURIComponent(url);
+
+  // guarda tudo ANTES de abrir a aba (o popup fecha-se logo a seguir)
+  try {
+    await browser.storage.local.set({
+      lensQuery: query,
+      lastImageUrl: url,
+      lensPending: Date.now()
+    });
+  } catch (e) {
+    console.warn("[Popup] storage falhou:", e);
   }
 
-  status.className = "status visible loading";
-  status.textContent = isLensSearchUrl
-    ? "A abrir a pesquisa no Lens... aguarda o AI Overview."
-    : "A abrir o Lens... aguarda o AI Overview. A calculadora abre sozinha quando os itens forem lidos.";
-  await browser.tabs.create({ url: openUrl, active: true });
-  // O popup vai fechar sozinho ao perder o foco — é normal.
+  showStatus(
+    "success",
+    "A abrir o Lens…<br>1) a imagem carrega &nbsp;→ 2) a query é anexada automaticamente " +
+      "(igual a escreveres na caixa) &nbsp;→ 3) os itens do AI Overview vão diretos para a calculadora."
+  );
+
+  try {
+    await browser.tabs.create({ url: openUrl, active: true });
+  } catch (e) {
+    showStatus("error", "Não consegui abrir o separador: " + e.message);
+  }
 });
 
-document.getElementById("openSite").addEventListener("click", () => {
-  browser.tabs.create({ url: "https://offsetrp-calculadora.vercel.app" });
+$("openSite").addEventListener("click", () => {
+  browser.tabs.create({ url: "https://offsetrp-calculadora.vercel.app", active: true });
+});
+
+$("openLens").addEventListener("click", () => {
+  browser.tabs.create({ url: "https://lens.google.com/", active: true });
+});
+
+// Enter no campo do link = Extrair
+urlInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("extract").click();
 });

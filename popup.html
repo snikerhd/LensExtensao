@@ -1,32 +1,73 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
   <meta charset="UTF-8">
   <style>
-    body { width: 350px; padding: 16px; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
-    h1 { font-size: 14px; margin: 0 0 12px; color: #f59e0b; }
-    input { width: 100%; padding: 8px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #e2e8f0; font-size: 13px; box-sizing: border-box; }
-    input:focus { outline: none; border-color: #f59e0b; }
-    button { width: 100%; padding: 10px; margin-top: 8px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; text-transform: uppercase; }
-    .btn-primary { background: #f59e0b; color: #0f172a; }
-    .btn-primary:hover { background: #d97706; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary { background: #334155; color: #e2e8f0; }
-    .status { margin-top: 10px; padding: 8px; border-radius: 6px; font-size: 12px; display: none; }
+    * { box-sizing: border-box; }
+    body {
+      width: 380px; margin: 0; padding: 18px;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #0b1220; color: #e2e8f0;
+    }
+    header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    header img { width: 26px; height: 26px; }
+    h1 { font-size: 14px; margin: 0; color: #f59e0b; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .ver { font-size: 10px; color: #64748b; margin-left: auto; font-family: ui-monospace, monospace; }
+    label { display: block; font-size: 11px; color: #94a3b8; margin: 10px 0 5px; text-transform: uppercase; letter-spacing: .08em; }
+    input, textarea {
+      width: 100%; padding: 9px 10px; border: 1px solid #334155; border-radius: 8px;
+      background: #111d33; color: #e2e8f0; font-size: 13px;
+    }
+    textarea {
+      min-height: 78px; resize: vertical; font-size: 11.5px; line-height: 1.45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    input:focus, textarea:focus { outline: none; border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.15); }
+    .hint { font-size: 10.5px; color: #64748b; margin-top: 4px; line-height: 1.4; }
+    button {
+      width: 100%; padding: 11px; margin-top: 10px; border: none; border-radius: 8px;
+      font-size: 12.5px; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: .05em;
+      transition: background .15s ease, opacity .15s ease;
+    }
+    .btn-primary { background: #f59e0b; color: #0b1220; }
+    .btn-primary:hover { background: #fbbf24; }
+    .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+    .btn-secondary:hover { background: #273549; }
+    .row { display: flex; gap: 8px; }
+    .row button { width: 50%; }
+    .status { margin-top: 12px; padding: 9px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5; display: none; }
     .status.visible { display: block; }
-    .status.error { background: #7f1d1d; color: #fca5a5; }
-    .status.success { background: #14532d; color: #86efac; }
-    .status.loading { background: #1e293b; color: #94a3b8; }
-    .result { margin-top: 10px; max-height: 200px; overflow-y: auto; font-size: 11px; background: #1e293b; border-radius: 6px; padding: 8px; display: none; }
-    .result.visible { display: block; }
-    .result pre { white-space: pre-wrap; word-break: break-word; color: #86efac; margin: 0; }
+    .status.error { background: #3f1d1d; color: #fca5a5; border: 1px solid #7f1d1d; }
+    .status.success { background: #0f3320; color: #86efac; border: 1px solid #14532d; }
+    .status.loading { background: #111d33; color: #94a3b8; border: 1px solid #334155; }
+    .reset-link {
+      background: none; border: none; color: #f59e0b; font-size: 10px; padding: 0; margin-top: 4px;
+      text-transform: none; letter-spacing: 0; font-weight: 600; cursor: pointer; width: auto; display: inline-block;
+    }
+    .reset-link:hover { text-decoration: underline; background: none; }
   </style>
 </head>
 <body>
-  <h1>🔍 Offset RP — Lens Extractor</h1>
-  <input type="text" id="url" placeholder="https://i.gyazo.com/....png" autofocus>
+  <header>
+    <img src="icon.svg" alt="">
+    <h1>Offset RP — Lens Extractor</h1>
+    <span class="ver">v4.0.0</span>
+  </header>
+
+  <label for="url">Link da imagem</label>
+  <input type="text" id="url" placeholder="https://i.gyazo.com/....png" autofocus spellcheck="false">
+  <div class="hint">Cola o link direto da imagem — ou usa o clique direito numa imagem &gt; <b>Extrair itens com Lens</b>. Também aceita um URL completo de google.com/search.</div>
+
+  <label for="query">Query multimodal (editável)</label>
+  <textarea id="query" spellcheck="false"></textarea>
+  <button class="reset-link" id="resetQuery">Repor query predefinida</button>
+
   <button class="btn-primary" id="extract">Abrir Lens &amp; Extrair</button>
-  <button class="btn-secondary" id="openSite">Abrir Calculadora</button>
+  <div class="row">
+    <button class="btn-secondary" id="openSite">Abrir Calculadora</button>
+    <button class="btn-secondary" id="openLens">Abrir Lens vazio</button>
+  </div>
+
   <div class="status" id="status"></div>
   <script src="popup.js"></script>
 </body>
