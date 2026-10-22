@@ -5,7 +5,7 @@
   <style>
     * { box-sizing: border-box; }
     body {
-      width: 380px; margin: 0; padding: 18px;
+      width: 400px; margin: 0; padding: 18px;
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       background: #0b1220; color: #e2e8f0;
     }
@@ -13,7 +13,9 @@
     header img { width: 26px; height: 26px; }
     h1 { font-size: 14px; margin: 0; color: #f59e0b; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .ver { font-size: 10px; color: #64748b; margin-left: auto; font-family: ui-monospace, monospace; }
-    label { display: block; font-size: 11px; color: #94a3b8; margin: 10px 0 5px; text-transform: uppercase; letter-spacing: .08em; }
+    label { display: block; font-size: 11px; color: #94a3b8; margin: 12px 0 5px; text-transform: uppercase; letter-spacing: .08em; }
+    .url-row { display: flex; gap: 8px; }
+    .url-row input { flex: 1; }
     input, textarea {
       width: 100%; padding: 9px 10px; border: 1px solid #334155; border-radius: 8px;
       background: #111d33; color: #e2e8f0; font-size: 13px;
@@ -33,6 +35,12 @@
     .btn-primary:hover { background: #fbbf24; }
     .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
     .btn-secondary:hover { background: #273549; }
+    .btn-paste {
+      width: 40px; margin-top: 0; padding: 0; display: grid; place-items: center;
+      background: #1e293b; color: #f59e0b; border: 1px solid #334155; border-radius: 8px;
+    }
+    .btn-paste:hover { background: #273549; }
+    .btn-paste svg { width: 16px; height: 16px; }
     .row { display: flex; gap: 8px; }
     .row button { width: 50%; }
     .status { margin-top: 12px; padding: 9px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5; display: none; }
@@ -51,11 +59,19 @@
   <header>
     <img src="icon.svg" alt="">
     <h1>Offset RP — Lens Extractor</h1>
-    <span class="ver">v4.0.0</span>
+    <span class="ver">v5.2.0</span>
   </header>
 
   <label for="url">Link da imagem</label>
-  <input type="text" id="url" placeholder="https://i.gyazo.com/....png" autofocus spellcheck="false">
+  <div class="url-row">
+    <input type="text" id="url" placeholder="https://i.gyazo.com/….png" autofocus spellcheck="false">
+    <button class="btn-paste" id="paste" title="Colar da área de transferência">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="2" width="8" height="4" rx="1"/>
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      </svg>
+    </button>
+  </div>
   <div class="hint">Cola o link direto da imagem — ou usa o clique direito numa imagem &gt; <b>Extrair itens com Lens</b>. Também aceita um URL completo de google.com/search.</div>
 
   <label for="query">Query multimodal (editável)</label>
