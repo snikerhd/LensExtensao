@@ -1,5 +1,5 @@
 /* ============================================================================
- * popup.js — v5.2.0
+ * popup.js — v5.3.0
  * O popup continua a pedir o link da imagem (como sempre). Melhorias v5:
  *  [NOVO] Botão «Colar» lê a imagem diretamente da área de transferência.
  *  [FIX]  Links sem http(s):// são corrigidos automaticamente.
@@ -7,8 +7,10 @@
  *  Enter no campo do link = Extrair (mantido).
  * ==========================================================================*/
 
-const DEFAULT_QUERY =
+const OLD_DEFAULT_QUERY =
   "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
+const DEFAULT_QUERY =
+  "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
 const SITE_URL = "https://offsetrp-calculadora.vercel.app";
 
 const $ = (id) => document.getElementById(id);
@@ -33,7 +35,12 @@ function normalizeUrl(raw) {
 browser.storage.local
   .get(["lensQuery", "lastImageUrl"])
   .then((s) => {
-    queryInput.value = s.lensQuery || DEFAULT_QUERY;
+    let q = s.lensQuery;
+    if (!q || q.trim() === OLD_DEFAULT_QUERY.trim()) {
+      q = DEFAULT_QUERY;
+      browser.storage.local.set({ lensQuery: q });
+    }
+    queryInput.value = q;
     if (s.lastImageUrl) urlInput.value = s.lastImageUrl;
   });
 

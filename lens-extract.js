@@ -1,6 +1,21 @@
 /* ============================================================================
- * lens-extract.js — v5.2.0
+ * lens-extract.js — v5.3.0
  * Content script do Google Lens / Pesquisa Google / consentimento.
+ * ----------------------------------------------------------------------------
+ * NOVO em v5.3.0 (inventários de RP com dinheiro em milhões):
+ *  [FIX PK] O parser descartava quantidades > 99999 e os regexes só liam
+ *        5 dígitos — "Dinheiro - 100000000", "Saco Dinheiro - 48227484" e
+ *        "Dinheiro - 40116586" desapareciam. Agora aceita até 1e15 e 15
+ *        dígitos, pelo que todas as pilhas passam.
+ *  [FIX PK] Deixou de deduplicar linhas: várias pilhas do mesmo item
+ *        (4× "Dinheiro", 2× "Dinheiro - 100000000") têm de chegar todas ao
+ *        backend, que soma por nome.
+ *  [FIX PK] Filtro de lixo alargado: "Loot Table Config", "Better Loot",
+ *        "Config" e etiquetas truncadas com "..." deixam de ser tratadas
+ *        como itens.
+ *  [FIX PK] Query predefinida reescrita: obriga o AI Overview a listar TODAS
+ *        as linhas, sem resumir, somar, deduplicar ou traduzir, e a manter
+ *        quantidades completas (mesmo em milhões).
  * ----------------------------------------------------------------------------
  * NOVO em v5.2.0 (o caso real reportado: «tá lá o texto mas falta clicar o
  * botão de search»):
@@ -31,13 +46,13 @@
   "use strict";
 
   var TAG = "[LensExt]";
-  var VERSION = "5.2.0";
+  var VERSION = "5.3.0";
   var POLL_MS = 800; /* intervalo de varrimento */
   var MAX_POLLS = 100; /* ~80 s de timeout */
   var PENDING_TTL = 15 * 60 * 1000; /* 15 minutos */
 
   var DEFAULT_QUERY =
-    "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
+    "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
 
   /* ---------------------------------------------------------------- utils */
 
@@ -306,9 +321,16 @@
       "news|ferramentas|tools|todos|all|mapas|maps|compras|shopping|finan[cç]as|" +
       "pesquisas relacionadas|related searches|people also|tamb[eé]m|resultados|" +
       "aproximadamente|guardado|saved|copiar|copy|exportar|export|partilhar|share|" +
-      "pausar|parar|stop|a pensar|thinking|a gerar|generating)",
+      "pausar|parar|stop|a pensar|thinking|a gerar|generating|" +
+      "loot\\s*table|better\\s*loot|config|configura[cç][aã]o)",
     "i"
   );
+
+  /* Nomes cortados pela UI ("...", "…") não são itens — são etiquetas
+   * truncadas (ex.: "Loot Table Config (Better Loot V4 Compatible ..."). */
+  function isTruncatedUiLabel(name) {
+    return /\.{2,}|…/.test(name);
+  }
 
   function hasLetter(s) {
     return /[a-záàâãäéèêëíìîïóòôõöúùûüçñ]/i.test(s);
@@ -320,9 +342,13 @@
       .replace(/^["'«]+|["'»]+$/g, "")
       .trim();
     var n = parseInt(qty, 10);
-    if (!isFinite(n) || n <= 0 || n > 99999) return null;
+    /* [FIX PK] Inventários de RP têm dinheiro em milhões/mil milhões. O limite
+     * antigo de 99999 descartava "Dinheiro - 100000000", "Saco Dinheiro -
+     * 48227484", etc. Aceitamos até 1e15 (Number continua exato até 2^53). */
+    if (!isFinite(n) || n <= 0 || n > 1e15) return null;
     if (name.length < 2 || name.length > 90) return null;
     if (!hasLetter(name)) return null;
+    if (isTruncatedUiLabel(name)) return null;
     if (RE_JUNK.test(name)) return null;
     return name + " - " + n;
   }
@@ -341,16 +367,16 @@
     var m;
 
     /* "12x Nome" / "x12 Nome" / "12 x Nome" */
-    m = line.match(/^x?\s*(\d{1,5})\s*x\s*[:.\-–—]?\s*(.{2,90})$/i);
+    m = line.match(/^x?\s*(\d{1,15})\s*x\s*[:.\-–—]?\s*(.{2,90})$/i);
     if (m) return fmt(m[2], m[1]);
 
     /* "Nome (x12)" / "Nome (12)" / "Nome [12]" */
-    m = line.match(/^(.{2,90}?)[\s]*[(\[]\s*x?\s*(\d{1,5})\s*[)\]]\.?\s*$/i);
+    m = line.match(/^(.{2,90}?)[\s]*[(\[]\s*x?\s*(\d{1,15})\s*[)\]]\.?\s*$/i);
     if (m) return fmt(m[1], m[2]);
 
     /* "Nome - 12" / "Nome – qtd 12" / "Nome: 12" / "Nome x 12" */
     m = line.match(
-      /^(.{2,90}?)[\s]*[-–—:|x]\s*(?:qtd\.?|qde\.?|x)?\s*(\d{1,5})\s*(?:un|pz|pcs)?\.?\s*$/i
+      /^(.{2,90}?)[\s]*[-–—:|x]\s*(?:qtd\.?|qde\.?|x)?\s*(\d{1,15})\s*(?:un|pz|pcs)?\.?\s*$/i
     );
     if (m) return fmt(m[1], m[2]);
 
@@ -371,13 +397,13 @@
     for (var i = 0; i < lines.length; i++) {
       var item = parseItemLine(lines[i]);
       if (item) {
-        var key = item.toLowerCase();
-        if (!seen[key]) {
-          seen[key] = true;
-          out.push(item);
-        }
+        /* [FIX PK] NÃO deduplicar: o inventário tem várias pilhas do mesmo
+         * item (ex.: 4× "Dinheiro", 2× "Dinheiro - 100000000"). O backend soma
+         * por nome, por isso cada pilha tem de chegar lá. Duplicados de
+         * polling não entram porque só se envia quando o texto estabiliza. */
+        out.push(item);
       }
-      if (out.length >= 30) break;
+      if (out.length >= 200) break;
     }
   }
 

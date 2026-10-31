@@ -1,8 +1,7 @@
 /* ============================================================================
- * background.js — v5.2.0
- * v5.2.0: sem mudanças funcionais — a submissão automática (botão de lupa
- * identificado pelo SVG Material + retentativa) vive em lens-extract.js.
- * Orquestrador da extensão (Firefox MV2).
+ * background.js — v5.3.0
+ * v5.3.0: migra automaticamente a query antiga para a nova (que obriga a
+ * listar todas as pilhas sem deduplicar/somar). Sem mudanças de fluxo.
  * ----------------------------------------------------------------------------
  * CORREÇÕES v5 (vs. v4.0.0):
  *  [FIX 1] O "sinal" lensPending deixou de ser só um timestamp com TTL de
@@ -22,8 +21,10 @@
  * ==========================================================================*/
 
 const SITE_URL = "https://offsetrp-calculadora.vercel.app";
-const DEFAULT_QUERY =
+const OLD_DEFAULT_QUERY =
   "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
+const DEFAULT_QUERY =
+  "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -191,13 +192,27 @@ function setupContextMenu() {
   }
 }
 
+/* Migra quem ainda tem a query antiga guardada para a nova (que obriga a
+ * listar TODAS as pilhas, sem deduplicar nem somar). Quem personalizou a
+ * query fica com a sua. */
+async function migrateQuery() {
+  try {
+    const s = await browser.storage.local.get("lensQuery");
+    const q = (s.lensQuery || "").trim();
+    if (!q || q === OLD_DEFAULT_QUERY.trim()) {
+      await browser.storage.local.set({ lensQuery: DEFAULT_QUERY });
+    }
+  } catch (e) {}
+}
+
 browser.runtime.onInstalled.addListener(() => {
   setupContextMenu();
-  browser.storage.local.get("lensQuery").then((s) => {
-    if (!s.lensQuery) browser.storage.local.set({ lensQuery: DEFAULT_QUERY });
-  });
+  migrateQuery();
 });
-browser.runtime.onStartup.addListener(setupContextMenu);
+browser.runtime.onStartup.addListener(() => {
+  setupContextMenu();
+  migrateQuery();
+});
 setupContextMenu();
 
 browser.contextMenus.onClicked.addListener((info) => {
