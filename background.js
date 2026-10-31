@@ -1,32 +1,29 @@
 /* ============================================================================
- * background.js — v5.3.0
- * v5.3.0: migra automaticamente a query antiga para a nova (que obriga a
- * listar todas as pilhas sem deduplicar/somar). Sem mudanças de fluxo.
- * ----------------------------------------------------------------------------
- * CORREÇÕES v5 (vs. v4.0.0):
- *  [FIX 1] O "sinal" lensPending deixou de ser só um timestamp com TTL de
- *          3 minutos: agora é um objecto {at, url, query} válido durante
- *          15 minutos — deixou de caducar quando o utilizador demora na
- *          página de consentimento. → "às vezes falhava a pesquisa"
- *  [FIX 2] O pending é gravado com `await` ANTES de abrir a aba do Lens —
- *          o content script nunca apanha uma corrida vazia.
- *  [FIX 3] A calculadora JÁ NÃO abre num separador novo em cada extração:
- *          reutiliza/recarrega a aba existente (evita duplicados e perdas).
- *  [FIX 4] A injeção fica à escuta do evento onUpdated "complete" da aba
- *          em vez de disparar mensagens às cegas — o texto chega sempre.
- *  [FIX 5] Em falha, a calculadora abre na mesma (antes ficava tudo parado
- *          e não abria o site) e, se houver itens parciais, vão também.
- *  [FIX 6] O texto extraído é SEMPRE copiado para a área de transferência
- *          como rede de segurança (podes colar à mão se tudo falhar).
+ * background.js — v5.5.0
+ * Base: v5.4.2 aprovada no AMO (envia o texto imediatamente, com retry).
+ * v5.5.0: migra a query antiga para a nova, que obriga a listar todas as
+ *         pilhas sem juntar/somar/deduplicar e a manter quantidades em milhões.
  * ==========================================================================*/
 
 const SITE_URL = "https://offsetrp-calculadora.vercel.app";
-const OLD_DEFAULT_QUERY =
-  "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
-const DEFAULT_QUERY =
-  "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
+const OLD_DEFAULT_QUERY = `Analisa a imagem deste inventário e extrai todos os itens num formato de lista simples ("Nome: Quantidade"), seguindo rigorosamente estas regras de formatação:
 
-/* ------------------------------------------------------------- helpers --- */
+1. Itens normais: Mostra o nome do item e a quantidade (ex: "Bifana: x3").
+2. Armas: Mostra o nome da arma, o número de munições e a quantidade de acessórios acoplados (ex: "Machine Pistol: 117 munições | 1 acessório"). Se houver acessórios, coloca apenas a quantidade numérica deles.
+3. Petrol Can (Galão de Combustível): Ignora qualquer número grande que apareça no topo do ícone. A quantidade deve ser sempre fixada em "x1".
+4. Caixas vazias: Não listes os espaços vazios do inventário.
+
+Mantém a resposta curta, direta e apenas com a lista formatada.`;
+const DEFAULT_QUERY = `Analisa a imagem deste inventário e extrai TODOS os itens visíveis, um por linha, no formato "Nome: xQuantidade", seguindo rigorosamente estas regras:
+
+1. Itens normais: nome do item e quantidade (ex: "Bifana: x3"). Copia cada pilha tal como aparece — se houver várias pilhas do mesmo item (ex: vários "Dinheiro"), lista TODAS, sem juntar, somar ou eliminar duplicados.
+2. Quantidades completas: mantém o número inteiro, mesmo que seja em milhões (ex: "Dinheiro: x100000000"). Não uses separadores de milhares.
+3. Armas: nome da arma, número de munições e quantidade de acessórios acoplados (ex: "Machine Pistol: 117 munições | 1 acessório"). Para acessórios, usa apenas a quantidade numérica.
+4. Petrol Can (Galão de Combustível): ignora qualquer número grande no topo do ícone; a quantidade é sempre "x1".
+5. Caixas vazias: não listes os espaços vazios do inventário.
+6. Ignora etiquetas de interface (ex: "Loot Table Config", "Better Loot", "Config"), números de nível por cima dos itens e texto cortado com "...". Não traduzas os nomes.
+
+Responde apenas com a lista formatada.`;
 
 function notify(title, message) {
   try {
@@ -36,20 +33,15 @@ function notify(title, message) {
       title: title,
       message: message
     });
-  } catch (e) {
-    console.warn("[BG] notify falhou:", e);
-  }
+  } catch (e) {}
 }
 
-/* Rede de segurança: copia o texto para a área de transferência. */
 async function copyToClipboard(text) {
   if (!text) return false;
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch (e) {
-    /* fallthrough */
-  }
+  } catch (e) {}
   try {
     const ta = document.createElement("textarea");
     ta.value = text;
@@ -65,7 +57,6 @@ async function copyToClipboard(text) {
   }
 }
 
-/* Grava o sinal "veio da extensão" — objecto rico, TTL 15 min. [FIX 1] */
 async function setPending(imageOrLensUrl) {
   let s = {};
   try {
@@ -76,23 +67,18 @@ async function setPending(imageOrLensUrl) {
     await browser.storage.local.set({
       lensPending: { at: Date.now(), url: imageOrLensUrl, query: query }
     });
-  } catch (e) {
-    console.warn("[BG] não consegui gravar lensPending:", e);
-  }
+  } catch (e) {}
 }
 
 async function openLensSearch(imageOrLensUrl) {
-  const isGoogleSearch =
-    /^https?:\/\/(www\.)?google\.[a-z.]+\/search/i.test(imageOrLensUrl);
+  const isGoogleSearch = /^https?:\/\/(www\.)?google\.[a-z.]+\/search/i.test(imageOrLensUrl);
   const isLens = /^https?:\/\/lens\.google\.[a-z.]+/i.test(imageOrLensUrl);
 
-  const openUrl =
-    isGoogleSearch || isLens
+  const openUrl = isGoogleSearch || isLens
       ? imageOrLensUrl
-      : "https://lens.google.com/uploadbyurl?hl=pt-PT&url=" +
-        encodeURIComponent(imageOrLensUrl);
+      : "https://lens.google.com/uploadbyurl?hl=pt-PT&url=" + encodeURIComponent(imageOrLensUrl);
 
-  await setPending(imageOrLensUrl); /* [FIX 2] antes de abrir a aba */
+  await setPending(imageOrLensUrl);
   try {
     await browser.tabs.create({ url: openUrl, active: true });
   } catch (e) {
@@ -100,12 +86,6 @@ async function openLensSearch(imageOrLensUrl) {
   }
 }
 
-/*
- * Abre (ou reutiliza [FIX 3]) a calculadora e entrega o texto:
- *   1. storage.local.lastExtraction → fonte da verdade (o site-inject levanta)
- *   2. clipboard → rede de segurança [FIX 6]
- *   3. mensagens com retry depois do "complete" da aba [FIX 4]
- */
 async function deliverToSite(text, opts) {
   opts = opts || {};
   const payload = {
@@ -117,25 +97,24 @@ async function deliverToSite(text, opts) {
   try {
     await browser.storage.local.set({ lastExtraction: payload });
   } catch (e) {}
-  if (text) copyToClipboard(text); /* fire-and-forget */
+  if (text) copyToClipboard(text);
 
   let tabId = null;
   try {
     const tabs = await browser.tabs.query({ url: SITE_URL + "/*" });
     if (tabs && tabs.length) {
       tabId = tabs[0].id;
-      await browser.tabs.update(tabId, { url: SITE_URL, active: true });
+      await browser.tabs.update(tabId, { active: true });
     } else {
       const t = await browser.tabs.create({ url: SITE_URL, active: true });
       tabId = t.id;
     }
   } catch (e) {
-    console.warn("[BG] não consegui abrir a calculadora:", e);
     notify("Lens Extractor", "Texto copiado — não consegui abrir a calculadora.");
     return;
   }
 
-  /* envia mensagens com retry assim que a aba termina de carregar */
+  // [FIX] Dispara imediatamente. O retry (a cada 900ms) garante que chega lá.
   function armMessaging() {
     if (!text) return;
     let attempts = 0;
@@ -157,26 +136,8 @@ async function deliverToSite(text, opts) {
     }, 900);
   }
 
-  let done = false;
-  const onUpdated = (id, info) => {
-    if (id === tabId && info.status === "complete" && !done) {
-      done = true;
-      browser.tabs.onUpdated.removeListener(onUpdated);
-      setTimeout(armMessaging, 500);
-    }
-  };
-  browser.tabs.onUpdated.addListener(onUpdated);
-  /* rede de segurança: se o evento nunca chegar, dispara na mesma */
-  setTimeout(() => {
-    if (!done) {
-      done = true;
-      browser.tabs.onUpdated.removeListener(onUpdated);
-      armMessaging();
-    }
-  }, 8000);
+  armMessaging();
 }
-
-/* ------------------------------------------------------ menu de contexto --- */
 
 function setupContextMenu() {
   try {
@@ -187,14 +148,11 @@ function setupContextMenu() {
         contexts: ["image"]
       });
     });
-  } catch (e) {
-    console.warn("[BG] contextMenus:", e);
-  }
+  } catch (e) {}
 }
 
-/* Migra quem ainda tem a query antiga guardada para a nova (que obriga a
- * listar TODAS as pilhas, sem deduplicar nem somar). Quem personalizou a
- * query fica com a sua. */
+/* Migra quem ainda tem a query antiga (5.4.x) guardada para a nova. Quem
+ * personalizou a query fica com a sua. */
 async function migrateQuery() {
   try {
     const s = await browser.storage.local.get("lensQuery");
@@ -225,8 +183,6 @@ browser.contextMenus.onClicked.addListener((info) => {
   }
 });
 
-/* ------------------------------------------------------------- mensagens --- */
-
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "LENS_SEARCH_IMAGE" && msg.url) {
     if (msg.query) {
@@ -238,13 +194,8 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "LENS_TEXT_EXTRACTED" && msg.text) {
-    const n =
-      msg.count || msg.text.split("\n").filter((l) => l.trim()).length;
-    console.log("[BG] extração OK:", n, "itens → a entregar na calculadora");
-    notify(
-      "Itens extraídos (" + n + ")",
-      "A abrir a calculadora e a colar o texto…"
-    );
+    const n = msg.count || msg.text.split("\n").filter((l) => l.trim()).length;
+    notify("Itens extraídos (" + n + ")", "A abrir a calculadora e a colar o texto…");
     deliverToSite(msg.text, { partial: false });
     sendResponse({ ok: true });
     return true;
@@ -252,19 +203,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "LENS_TEXT_FAILED") {
     const partial = (msg.text || "").trim();
-    console.warn("[BG] extração falhou; parciais:", partial ? msg.count : 0);
     if (partial) {
-      notify(
-        "Extração incompleta (" + (msg.count || "?") + " itens)",
-        "O AI Overview demorou — enviei o que apanhei. Confere o texto na calculadora."
-      );
+      notify("Extração incompleta", "Enviei o que apanhei. Confere o texto.");
       deliverToSite(partial, { partial: true });
     } else {
-      /* [FIX 5] mesmo sem nada, abre a calculadora em vez de ficar calado */
-      notify(
-        "Lens Extractor",
-        "O AI Overview não apareceu (às vezes o Google não o mostra). A calculadora vai abrir — cola lá o texto à mão."
-      );
+      notify("Lens Extractor", "O AI Overview não apareceu. A calculadora vai abrir.");
       deliverToSite("", { partial: false });
     }
     sendResponse({ ok: true });

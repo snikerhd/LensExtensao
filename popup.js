@@ -1,16 +1,27 @@
 /* ============================================================================
- * popup.js — v5.3.0
- * O popup continua a pedir o link da imagem (como sempre). Melhorias v5:
- *  [NOVO] Botão «Colar» lê a imagem diretamente da área de transferência.
- *  [FIX]  Links sem http(s):// são corrigidos automaticamente.
- *  [FIX]  storage gravado com `await` ANTES de abrir a aba — zero corridas.
- *  Enter no campo do link = Extrair (mantido).
+ * popup.js — v5.5.0
+ * v5.5.0: Query estruturada atualizada (todas as pilhas, quantidades em
+ *         milhões) + migração automática da query antiga.
  * ==========================================================================*/
 
-const OLD_DEFAULT_QUERY =
-  "Consegues meter nome - quantidade arma- municao acessorios- quantidade na imagem se aparecer acessorios mete so o numero petrocal se tiver numero em cima ignora e so 1";
-const DEFAULT_QUERY =
-  "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
+const OLD_DEFAULT_QUERY = `Analisa a imagem deste inventário e extrai todos os itens num formato de lista simples ("Nome: Quantidade"), seguindo rigorosamente estas regras de formatação:
+
+1. Itens normais: Mostra o nome do item e a quantidade (ex: "Bifana: x3").
+2. Armas: Mostra o nome da arma, o número de munições e a quantidade de acessórios acoplados (ex: "Machine Pistol: 117 munições | 1 acessório"). Se houver acessórios, coloca apenas a quantidade numérica deles.
+3. Petrol Can (Galão de Combustível): Ignora qualquer número grande que apareça no topo do ícone. A quantidade deve ser sempre fixada em "x1".
+4. Caixas vazias: Não listes os espaços vazios do inventário.
+
+Mantém a resposta curta, direta e apenas com a lista formatada.`;
+const DEFAULT_QUERY = `Analisa a imagem deste inventário e extrai TODOS os itens visíveis, um por linha, no formato "Nome: xQuantidade", seguindo rigorosamente estas regras:
+
+1. Itens normais: nome do item e quantidade (ex: "Bifana: x3"). Copia cada pilha tal como aparece — se houver várias pilhas do mesmo item (ex: vários "Dinheiro"), lista TODAS, sem juntar, somar ou eliminar duplicados.
+2. Quantidades completas: mantém o número inteiro, mesmo que seja em milhões (ex: "Dinheiro: x100000000"). Não uses separadores de milhares.
+3. Armas: nome da arma, número de munições e quantidade de acessórios acoplados (ex: "Machine Pistol: 117 munições | 1 acessório"). Para acessórios, usa apenas a quantidade numérica.
+4. Petrol Can (Galão de Combustível): ignora qualquer número grande no topo do ícone; a quantidade é sempre "x1".
+5. Caixas vazias: não listes os espaços vazios do inventário.
+6. Ignora etiquetas de interface (ex: "Loot Table Config", "Better Loot", "Config"), números de nível por cima dos itens e texto cortado com "...". Não traduzas os nomes.
+
+Responde apenas com a lista formatada.`;
 const SITE_URL = "https://offsetrp-calculadora.vercel.app";
 
 const $ = (id) => document.getElementById(id);
@@ -18,12 +29,11 @@ const status = $("status");
 const urlInput = $("url");
 const queryInput = $("query");
 
-function showStatus(kind, html) {
+function showStatus(kind, message) {
   status.className = "status visible " + kind;
-  status.innerHTML = html;
+  status.textContent = message;
 }
 
-/* corrige links colados sem protocolo ("i.gyazo.com/….png" → "https://…") */
 function normalizeUrl(raw) {
   let u = String(raw || "").trim();
   if (!u) return "";
@@ -31,7 +41,6 @@ function normalizeUrl(raw) {
   return u;
 }
 
-/* carrega a query guardada (ou a predefinida) e o último link usado */
 browser.storage.local
   .get(["lensQuery", "lastImageUrl"])
   .then((s) => {
@@ -44,7 +53,6 @@ browser.storage.local
     if (s.lastImageUrl) urlInput.value = s.lastImageUrl;
   });
 
-/* [NOVO] botão Colar — lê a área de transferência para o campo do link */
 $("paste").addEventListener("click", async () => {
   try {
     const clip = (await navigator.clipboard.readText()).trim();
@@ -91,12 +99,11 @@ $("extract").addEventListener("click", async () => {
       : "https://lens.google.com/uploadbyurl?hl=pt-PT&url=" +
         encodeURIComponent(url);
 
-  /* guarda tudo ANTES de abrir a aba (o popup fecha-se logo a seguir) */
   try {
     await browser.storage.local.set({
       lensQuery: query,
       lastImageUrl: url,
-      lensPending: { at: Date.now(), url: url, query: query } /* sinal rico, 15 min */
+      lensPending: { at: Date.now(), url: url, query: query }
     });
   } catch (e) {
     console.warn("[Popup] storage falhou:", e);
@@ -111,7 +118,7 @@ $("extract").addEventListener("click", async () => {
   try {
     await browser.tabs.create({ url: openUrl, active: true });
   } catch (e) {
-    showStatus("error", "Não consegui abrir o separador: " + e.message);
+    showStatus("error", "Não consegui abrir o separador: " + (e && e.message ? e.message : "erro desconhecido"));
   }
 });
 
@@ -123,7 +130,6 @@ $("openLens").addEventListener("click", () => {
   browser.tabs.create({ url: "https://lens.google.com/", active: true });
 });
 
-/* Enter no campo do link = Extrair */
 urlInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("extract").click();
 });

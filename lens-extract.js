@@ -1,60 +1,33 @@
 /* ============================================================================
- * lens-extract.js — v5.3.0
- * Content script do Google Lens / Pesquisa Google / consentimento.
- * ----------------------------------------------------------------------------
- * NOVO em v5.3.0 (inventários de RP com dinheiro em milhões):
- *  [FIX PK] O parser descartava quantidades > 99999 e os regexes só liam
- *        5 dígitos — "Dinheiro - 100000000", "Saco Dinheiro - 48227484" e
- *        "Dinheiro - 40116586" desapareciam. Agora aceita até 1e15 e 15
- *        dígitos, pelo que todas as pilhas passam.
- *  [FIX PK] Deixou de deduplicar linhas: várias pilhas do mesmo item
- *        (4× "Dinheiro", 2× "Dinheiro - 100000000") têm de chegar todas ao
- *        backend, que soma por nome.
- *  [FIX PK] Filtro de lixo alargado: "Loot Table Config", "Better Loot",
- *        "Config" e etiquetas truncadas com "..." deixam de ser tratadas
- *        como itens.
- *  [FIX PK] Query predefinida reescrita: obriga o AI Overview a listar TODAS
- *        as linhas, sem resumir, somar, deduplicar ou traduzir, e a manter
- *        quantidades completas (mesmo em milhões).
- * ----------------------------------------------------------------------------
- * NOVO em v5.2.0 (o caso real reportado: «tá lá o texto mas falta clicar o
- * botão de search»):
- *  [NEW] O botão de pesquisa do Lens não tem aria-label: é identificado pelo
- *        PRÓPRIO SVG Material de search (path "M784-120…"), primeiro dentro
- *        do contentor da caixa e depois globalmente na página.
- *  [NEW] Submissão com RETENTATIVA (até 10×): se o primeiro clique não
- *        navegar, tenta outra vez a cada ~1 s.
- *  [NEW] O compositor certo: preferência ao campo cujo antepassado partilha
- *        o botão de lupa (evita textareas ocultas de outros widgets).
- *  [NEW] Se a URL da página ganhar "q" sem transição para /search (Lens pré-
- *        -anexa), a extração arranca na mesma.
- *
- * Mantido de v5.1.0:
- *  [NEW] Na página do Lens, a query é escrita na caixa E SUBMETIDA SOZINHA —
- *        clica o botão de pesquisa e, em fallback, envia Enter sintético e
- *        form.requestSubmit(). Já não precisas de carregar Enter à mão.
- *  [NEW] Se o Google pré-preencher a caixa com o texto, submete na mesma.
- *  [NEW] Fluxo SPA: se o Lens navegar para /search dentro da mesma página,
- *        a extração começa na hora, sem recarregar.
- *  [NEW] Gate de extração alargado: uma /search com q == query pendente e
- *        sinal fresco também é extraída (URLs de Enter sem &source=lns).
- *
- * Mantido de v5.0.0: sinal {at, url, query} com TTL de 15 min, document_start,
- * heurística tolerante de sessão Lens, parciais em timeout, parser multi-formato.
+ * lens-extract.js — v5.5.0
+ * Base: v5.4.2 aprovada no AMO (multimodal + parser estruturado + acessórios).
+ * [FIX PK] Quantidades até 1e15 / 15 dígitos (dinheiro em milhões deixava de
+ *          ser extraído pelo limite antigo de 99999 e pelos \d{1,5}).
+ * [FIX PK] Não deduplica pilhas repetidas (4× "Dinheiro", 2× "Dinheiro -
+ *          100000000") — o site soma por nome.
+ * [FIX PK] Filtra "Loot Table Config", "Better Loot", "Config" e etiquetas
+ *          truncadas com "..." que antes entravam como itens.
+ * [FIX PK] Prompt obriga a listar TODAS as pilhas, sem juntar/somar/deduplicar.
  * ==========================================================================*/
 (function () {
   "use strict";
 
   var TAG = "[LensExt]";
-  var VERSION = "5.3.0";
-  var POLL_MS = 800; /* intervalo de varrimento */
-  var MAX_POLLS = 100; /* ~80 s de timeout */
-  var PENDING_TTL = 15 * 60 * 1000; /* 15 minutos */
+  var VERSION = "5.5.0";
+  var POLL_MS = 800;
+  var MAX_POLLS = 100;
+  var PENDING_TTL = 15 * 60 * 1000;
 
-  var DEFAULT_QUERY =
-    "Lista TODOS os itens visíveis no inventário da imagem, um por linha, no formato exato: Nome - Quantidade. Copia cada linha tal como aparece, incluindo pilhas repetidas do mesmo item (por exemplo vários 'Dinheiro' com quantidades diferentes): NÃO resumas, NÃO somes, NÃO elimines duplicados e NÃO traduzas os nomes. Mantém as quantidades completas, mesmo que sejam milhões (por exemplo 100000000). Ignora etiquetas de interface como 'Loot Table Config', 'Better Loot', 'Config', números de nível por cima dos itens e texto cortado com '...'. Inclui armas, munições e acessórios; para acessórios usa 'Acessórios - N'.";
+  var DEFAULT_QUERY = `Analisa a imagem deste inventário e extrai TODOS os itens visíveis, um por linha, no formato "Nome: xQuantidade", seguindo rigorosamente estas regras:
 
-  /* ---------------------------------------------------------------- utils */
+1. Itens normais: nome do item e quantidade (ex: "Bifana: x3"). Copia cada pilha tal como aparece — se houver várias pilhas do mesmo item (ex: vários "Dinheiro"), lista TODAS, sem juntar, somar ou eliminar duplicados.
+2. Quantidades completas: mantém o número inteiro, mesmo que seja em milhões (ex: "Dinheiro: x100000000"). Não uses separadores de milhares.
+3. Armas: nome da arma, número de munições e quantidade de acessórios acoplados (ex: "Machine Pistol: 117 munições | 1 acessório"). Para acessórios, usa apenas a quantidade numérica.
+4. Petrol Can (Galão de Combustível): ignora qualquer número grande no topo do ícone; a quantidade é sempre "x1".
+5. Caixas vazias: não listes os espaços vazios do inventário.
+6. Ignora etiquetas de interface (ex: "Loot Table Config", "Better Loot", "Config"), números de nível por cima dos itens e texto cortado com "...". Não traduzas os nomes.
+
+Responde apenas com a lista formatada.`;
 
   function log() {
     var args = [].slice.call(arguments);
@@ -63,9 +36,7 @@
   }
 
   function hostMatches(sub, host) {
-    return new RegExp("(^|\\.)" + sub + "\\.google\\.[a-z.]{2,7}$", "i").test(
-      host
-    );
+    return new RegExp("(^|\\.)" + sub + "\\.google\\.[a-z.]{2,7}$", "i").test(host);
   }
 
   var host = location.hostname;
@@ -74,6 +45,27 @@
   var isGoogleSearch =
     /(^|\.)www\.google\.[a-z.]{2,7}$/i.test(host) &&
     location.pathname.indexOf("/search") === 0;
+
+  /* [FIX] Força TODOS os parâmetros multimodais do URL de referência. */
+  function forceMultimodalParams(params) {
+    var changed = false;
+
+    if (params.get("lns_mode") !== "mu") { params.set("lns_mode", "mu"); changed = true; }
+    if (params.get("udm") !== "24")       { params.set("udm", "24");       changed = true; }
+    if (!params.get("sclient"))           { params.set("sclient", "multimodal-lens-web"); changed = true; }
+    if (!params.get("source"))            { params.set("source", "lns.web.ukn"); changed = true; }
+    if (!params.get("lns_surface"))       { params.set("lns_surface", "26");     changed = true; }
+    if (!params.get("hl"))                { params.set("hl", "pt-PT");           changed = true; }
+    if (!params.get("extq"))              { params.set("extq", "1");             changed = true; }
+    if (!params.get("qsubts"))            { params.set("qsubts", Date.now().toString()); changed = true; }
+    if (!params.get("lns_fp"))            { params.set("lns_fp", "1");           changed = true; }
+    var q = params.get("q") || "";
+    if (!params.get("oq") && q)           { params.set("oq", q);                 changed = true; }
+    if (!params.get("stq"))               { params.set("stq", "1");              changed = true; }
+    if (!params.get("cs"))                { params.set("cs", "1");               changed = true; }
+
+    return changed;
+  }
 
   function visible(el) {
     return !!el && el.offsetParent !== null && !el.disabled;
@@ -132,17 +124,11 @@
     if (src.indexOf("lns") === 0) return true;
     if (params.has("vsrid") || params.has("ludocid")) return true;
     if (params.get("udm") === "24") return true;
-    if (params.has("lns") || params.has("gssid") || params.has("vsi"))
-      return true;
+    if (params.has("lns") || params.has("gssid") || params.has("vsi")) return true;
     if (/lens\.google\./i.test(document.referrer || "")) return true;
     return false;
   }
 
-  /* ------------------------------------------- escrever & SUBMETER [NEW] */
-
-  /* O ícone de pesquisa do Google (Material "search") é estável: o path do
-   * SVG começa sempre por "M784-120" — é assim que encontramos o botão de
-   * search do Lens mesmo sem aria-label nem texto. */
   function isSearchIconBtn(btn) {
     if (!btn) return false;
     var svg = btn.querySelector("svg");
@@ -154,28 +140,22 @@
 
   function findSearchButton(nearEl) {
     var i, btns;
-    /* 1) âmbito local: primeiro antepassado do compositor com botões */
     if (nearEl) {
       var node = nearEl;
       for (var depth = 0; depth < 8 && node.parentElement; depth++) {
         node = node.parentElement;
         btns = node.querySelectorAll("button");
         if (btns.length) {
-          /* 1a) botão com a lupa Material dentro do mesmo contentor */
           for (i = 0; i < btns.length; i++) {
             if (visible(btns[i]) && isSearchIconBtn(btns[i])) return btns[i];
           }
-          /* 1b) qualquer botão com SVG nesse contentor (o submit do Lens é
-           * sempre um botão-ícone ao lado da caixa) */
           for (i = 0; i < btns.length; i++) {
-            if (visible(btns[i]) && btns[i].querySelector("svg"))
-              return btns[i];
+            if (visible(btns[i]) && btns[i].querySelector("svg")) return btns[i];
           }
         }
         if (node === document.body) break;
       }
     }
-    /* 2) global: qualquer botão visível com o ícone Material de search */
     btns = document.querySelectorAll("button");
     for (i = 0; i < btns.length; i++) {
       if (visible(btns[i]) && isSearchIconBtn(btns[i])) return btns[i];
@@ -194,15 +174,12 @@
       "input[type='search']",
       "input[type='text'][name='q']"
     ];
-    /* passada 1: campo vazio cujo antepassado partilha o botão de lupa —
-     * é a caixa certa do composer (evita textareas ocultas de outros widgets) */
     for (var i = 0; i < sels.length; i++) {
       var all = document.querySelectorAll(sels[i]);
       for (var j = 0; j < all.length; j++) {
         if (visible(all[j]) && findSearchButton(all[j])) return all[j];
       }
     }
-    /* passada 2: primeiro campo visível que existir */
     for (var a = 0; a < sels.length; a++) {
       var allA = document.querySelectorAll(sels[a]);
       for (var b = 0; b < allA.length; b++) {
@@ -260,10 +237,7 @@
     }
   }
 
-  /* 4 vias de submissão: botão aria/título → botão de lupa (SVG Material)
-   * → Enter sintético → form.requestSubmit() */
   function submitComposer(el, attempt) {
-    /* 1) botão convencional (aria-label / título / type=submit) */
     var btns = document.querySelectorAll(
       "button[aria-label*='Pesquis'], button[aria-label*='pesquis']," +
         " button[aria-label*='Search'], button[aria-label*='search']," +
@@ -284,8 +258,6 @@
       }
     }
 
-    /* 2) botão-ícone de pesquisa do Google (SVG Material "M784-120…") —
-     *    o botão do Lens que o utilizador indicou, sem aria-label */
     var iconBtn = findSearchButton(el);
     if (iconBtn) {
       iconBtn.click();
@@ -293,10 +265,8 @@
       return;
     }
 
-    /* 3) Enter sintético no próprio campo */
     dispatchEnter(el);
 
-    /* 4) form nativo */
     var form = el.closest && el.closest("form");
     if (form && form.requestSubmit) {
       try {
@@ -309,8 +279,6 @@
     }
     log("pesquisa submetida via Enter/form (tentativa " + attempt + ")");
   }
-
-  /* ----------------------------------------------------------- parser ---- */
 
   var RE_BULLETS = /^[\s>*•·▪◦‣–—-]*(?:\d{1,3}[.)]\s*)?/;
 
@@ -342,9 +310,9 @@
       .replace(/^["'«]+|["'»]+$/g, "")
       .trim();
     var n = parseInt(qty, 10);
-    /* [FIX PK] Inventários de RP têm dinheiro em milhões/mil milhões. O limite
-     * antigo de 99999 descartava "Dinheiro - 100000000", "Saco Dinheiro -
-     * 48227484", etc. Aceitamos até 1e15 (Number continua exato até 2^53). */
+    /* [FIX PK] Dinheiro de RP vai aos milhões/mil milhões. O limite antigo
+     * (99999) descartava "Dinheiro - 100000000", "Saco Dinheiro - 48227484",
+     * etc. Number continua exato até 2^53, por isso 1e15 é seguro. */
     if (!isFinite(n) || n <= 0 || n > 1e15) return null;
     if (name.length < 2 || name.length > 90) return null;
     if (!hasLetter(name)) return null;
@@ -366,15 +334,25 @@
 
     var m;
 
-    /* "12x Nome" / "x12 Nome" / "12 x Nome" */
+    // 0) Petrol Can (Galão) — força quantidade a 1 (ignora número grande no topo)
+    if (/petrol[\s-]*can|gal[ãa]o\s+de\s+combust/i.test(line)) {
+      m = line.match(/^([^:]{2,90})[\s]*:/i);
+      if (m) return fmt(m[1], 1);
+    }
+
+    // 1) Arma com munições: "Machine Pistol: 117 munições | 1 acessório"
+    m = line.match(/^(.{2,90}?)[\s]*[:][\s]*(?:x)?(\d{1,15})[\s]*muni[çc]/i);
+    if (m) return fmt(m[1], m[2]);
+
+    // 2) "12x Nome" / "x12 Nome"
     m = line.match(/^x?\s*(\d{1,15})\s*x\s*[:.\-–—]?\s*(.{2,90})$/i);
     if (m) return fmt(m[2], m[1]);
 
-    /* "Nome (x12)" / "Nome (12)" / "Nome [12]" */
+    // 3) "Nome (x12)" / "Nome [12]"
     m = line.match(/^(.{2,90}?)[\s]*[(\[]\s*x?\s*(\d{1,15})\s*[)\]]\.?\s*$/i);
     if (m) return fmt(m[1], m[2]);
 
-    /* "Nome - 12" / "Nome – qtd 12" / "Nome: 12" / "Nome x 12" */
+    // 4) "Nome - 12" / "Nome: 12" / "Nome: x12" / "Nome x 12"
     m = line.match(
       /^(.{2,90}?)[\s]*[-–—:|x]\s*(?:qtd\.?|qde\.?|x)?\s*(\d{1,15})\s*(?:un|pz|pcs)?\.?\s*$/i
     );
@@ -395,14 +373,23 @@
 
   function parseLines(lines, seen, out) {
     for (var i = 0; i < lines.length; i++) {
+      // 1) Item principal (Arma, Munições, Dinheiro, etc.)
       var item = parseItemLine(lines[i]);
       if (item) {
-        /* [FIX PK] NÃO deduplicar: o inventário tem várias pilhas do mesmo
-         * item (ex.: 4× "Dinheiro", 2× "Dinheiro - 100000000"). O backend soma
-         * por nome, por isso cada pilha tem de chegar lá. Duplicados de
-         * polling não entram porque só se envia quando o texto estabiliza. */
+        /* [FIX PK] Não deduplicar: há várias pilhas do mesmo item (4×
+         * "Dinheiro", 2× "Dinheiro - 100000000"). O site soma por nome, por
+         * isso cada pilha tem de chegar lá. Duplicados de polling não entram
+         * porque só se envia quando o texto estabiliza. */
         out.push(item);
       }
+
+      // 2) Acessórios no final da linha (ex: "| 1 acessório")
+      var accMatch = lines[i].match(/\|\s*(\d{1,15})\s*acess[oó]ri/i);
+      if (accMatch) {
+        var accQty = parseInt(accMatch[1], 10);
+        if (accQty > 0) out.push("Acessórios - " + accQty);
+      }
+
       if (out.length >= 200) break;
     }
   }
@@ -433,8 +420,6 @@
     return outAll;
   }
 
-  /* -------------------------------------------------------- loops -------- */
-
   function consentLoop() {
     var n = 0;
     var iv = setInterval(function () {
@@ -443,9 +428,30 @@
     }, 700);
   }
 
-  /* Página do Lens: escreve a query na caixa (se vazia) e SUBMETE, com
-   * RETENTATIVA até sair — se o primeiro clique não navegar, volta a tentar
-   * até 10 vezes. Cuida também do caso SPA (Lens → /search sem recarregar). */
+  function ensureMultimodalAndExtract(st, iv) {
+    clearInterval(iv);
+    var params = new URLSearchParams(location.search);
+    var changed = forceMultimodalParams(params);
+
+    if (isLens) {
+      var url = "https://www.google.com/search?" + params.toString();
+      log("a redirecionar do Lens para www.google.com/search com parâmetros multimodais");
+      location.replace(url);
+      return;
+    }
+
+    if (changed) {
+      var url2 =
+        location.origin + location.pathname + "?" + params.toString() + location.hash;
+      log("a recarregar a pesquisa com parâmetros multimodais (mu/24)");
+      location.replace(url2);
+      return;
+    }
+
+    log("parâmetros multimodais OK → a extrair");
+    extractLoop();
+  }
+
   function lensLoop(st) {
     var n = 0;
     var attempts = 0;
@@ -454,20 +460,17 @@
       n++;
       clickConsent();
 
-      /* URL com q na mesma página (o Google anexou-o) → tratar como /search */
       var paramsNow = new URLSearchParams(location.search);
+
       if (paramsNow.get("q") && st.fresh) {
-        clearInterval(iv);
-        log("URL com q detetado na mesma página → a extrair");
-        extractLoop();
+        log("URL com q detetado → a garantir parâmetros multimodais");
+        ensureMultimodalAndExtract(st, iv);
         return;
       }
 
-      /* SPA: o Lens mudou para /search dentro do mesmo documento */
       if (location.pathname.indexOf("/search") === 0 && st.fresh) {
-        clearInterval(iv);
-        log("SPA: /search detetado → a extrair no mesmo documento");
-        extractLoop();
+        log("SPA: /search detetado → a garantir parâmetros multimodais");
+        ensureMultimodalAndExtract(st, iv);
         return;
       }
 
@@ -481,7 +484,6 @@
           }
           (function (target, which) {
             setTimeout(function () {
-              /* só retenta se a página ainda não saiu deste estado */
               if (!new URLSearchParams(location.search).get("q")) {
                 submitComposer(target, which);
               }
@@ -491,7 +493,7 @@
         }
       }
 
-      if (n > 130) clearInterval(iv); /* ~105 s */
+      if (n > 130) clearInterval(iv);
     }, 800);
 
     log("sessão Lens — a escrever e a SUBMETER (botão de lupa incluído)…");
@@ -533,12 +535,7 @@
       }
 
       if (tries % 10 === 0)
-        log(
-          "…" +
-            Math.round((tries * POLL_MS) / 1000) +
-            "s — itens: " +
-            items.length
-        );
+        log("…" + Math.round((tries * POLL_MS) / 1000) + "s — itens: " + items.length);
 
       if (!sent && tries >= MAX_POLLS) {
         clearInterval(iv);
@@ -554,8 +551,6 @@
       }
     }, POLL_MS);
   }
-
-  /* ----------------------------------------------------------------- boot */
 
   function whenDOMReady(fn) {
     if (document.readyState === "loading") {
@@ -588,32 +583,31 @@
     var lensSession = isLensSession(params);
 
     getState().then(function (st) {
-      /* [NEW] /search com q igual à nossa query (ex.: navegação via Enter,
-       * cujos URLs podem não ter &source=lns) também conta como sessão nossa. */
       var isOurQuery =
         st.pending &&
         st.pending.query &&
         (params.get("q") || "").trim() === st.pending.query.trim();
 
-      /* sessão Lens SEM query + sinal fresco → anexar a query e recarregar */
       if (!hasQ && !injected && lensSession && st.fresh) {
         params.set("q", st.query);
         params.set("extq", "1");
-        if (!params.get("sclient"))
-          params.set("sclient", "multimodal-lens-web");
+        forceMultimodalParams(params);
         var url =
-          location.origin +
-          location.pathname +
-          "?" +
-          params.toString() +
-          location.hash;
+          location.origin + location.pathname + "?" + params.toString() + location.hash;
         log("a anexar a query multimodal ao URL da sessão…");
         location.replace(url);
         return;
       }
 
-      /* já com query → extrair */
       if (hasQ && (injected || (lensSession && st.fresh) || isOurQuery)) {
+        var changed = forceMultimodalParams(params);
+        if (changed) {
+          var url2 =
+            location.origin + location.pathname + "?" + params.toString() + location.hash;
+          log("a corrigir parâmetros para multimodal (mu/24) e recarregar");
+          location.replace(url2);
+          return;
+        }
         clickConsent();
         whenDOMReady(extractLoop);
         return;

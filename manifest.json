@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Offset RP - Lens AI Extractor",
-  "version": "5.3.0",
+  "version": "5.5.0",
   "description": "Abre a imagem no Google Lens, anexa a query multimodal, extrai os itens do AI Overview e envia-os para a calculadora OFFSET RP.",
   "icons": {
     "48": "icon.svg",
@@ -21,7 +21,9 @@
       "id": "lensextractor@offsetrp.app",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -41,7 +43,9 @@
     "https://offsetrp-calculadora.vercel.app/*"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
@@ -53,12 +57,18 @@
         "https://www.google.pt/search*",
         "https://consent.google.pt/*"
       ],
-      "js": ["lens-extract.js"],
+      "js": [
+        "lens-extract.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://offsetrp-calculadora.vercel.app/*"],
-      "js": ["site-inject.js"],
+      "matches": [
+        "https://offsetrp-calculadora.vercel.app/*"
+      ],
+      "js": [
+        "site-inject.js"
+      ],
       "run_at": "document_idle"
     }
   ]

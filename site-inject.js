@@ -1,42 +1,37 @@
 /* ============================================================================
- * site-inject.js — v5.0.0
- * Corre na calculadora OFFSET RP. Recebe o texto extraído do Lens e:
- *   1. recebe INJECT_OCR_TEXT via mensagem (caminho rápido), OU
- *   2. levanta lastExtraction do storage (fallback — TTL alargado para 10 min;
- *      na v4 eram 2 min e expirava durante carregamentos lentos);
- * preenche a textarea de colar (compatível com React) e clica «Processar
- * texto» — com retry até o botão ficar habilitado (na v4 só tentava 1×).
+ * site-inject.js — v5.1.2
+ * v5.1.2: FIX — Removida a variável "filled" que impedia a injeção de texto
+ *         na segunda vez que se usava o Lens sem recarregar a página.
  * ==========================================================================*/
 (function () {
   "use strict";
 
   var TAG = "[SiteInject]";
-  var PICKUP_TTL = 10 * 60 * 1000; /* 10 min (antes: 2 min) */
-  var filled = false;
+  var VERSION = "5.1.2";
+  var PICKUP_TTL = 10 * 60 * 1000;
 
   function log() {
     var args = [].slice.call(arguments);
     args.unshift(TAG);
     console.log.apply(console, args);
   }
-  log("activo em", location.host);
+  log("activo em", location.host, "(v" + VERSION + ")");
 
   /* ---------------------------------------------------------- preencher --- */
 
   function findPasteBox() {
-    /* identifica-se pelo placeholder original "1 (0.7)…" */
     var ta = document.querySelector('textarea[placeholder*="1 (0.7)"]');
-    if (ta) return ta;
-    /* fallback: qualquer textarea visível da página */
+    if (ta && ta.offsetParent !== null) return ta;
+    
     var all = document.querySelectorAll("textarea");
     for (var i = 0; i < all.length; i++) {
       if (all[i].offsetParent !== null && !all[i].disabled) return all[i];
     }
+    if (ta) return ta;
     return null;
   }
 
   function clickProcessar() {
-    /* o React demora a habilitar o botão → tenta até conseguir */
     var tries = 0;
     var iv = setInterval(function () {
       tries++;
@@ -44,12 +39,16 @@
       var btn = null;
       for (var i = 0; i < btns.length; i++) {
         var label = (btns[i].textContent || "").trim().toLowerCase();
-        if (label === "processar texto" || label.indexOf("processar") === 0) {
+        if (
+          btns[i].offsetParent !== null &&
+          !btns[i].disabled &&
+          (label === "processar texto" || label.indexOf("processar") === 0)
+        ) {
           btn = btns[i];
           break;
         }
       }
-      if (btn && !btn.disabled) {
+      if (btn) {
         clearInterval(iv);
         btn.click();
         log("'Processar texto' clicado (tentativa " + tries + ").");
@@ -57,11 +56,7 @@
       }
       if (tries >= 20) {
         clearInterval(iv);
-        log(
-          btn
-            ? "botão continua desabilitado — clica manualmente."
-            : "botão não encontrado — clica manualmente."
-        );
+        log("botão 'Processar texto' visível não encontrado — clica manualmente.");
       }
     }, 500);
   }
@@ -77,14 +72,11 @@
       var ta = findPasteBox();
       if (!ta) {
         if (tries < 40) return void setTimeout(attempt, 700);
-        return log(
-          "textarea de paste não encontrada (aba 'Coimas Rápidas' aberta?)"
-        );
+        return log("textarea de paste não encontrada (aba errada?).");
       }
-      if (filled) return;
-      filled = true;
 
-      /* setter nativo + evento input → compatível com React */
+      // [FIX] Já não há "if (filled) return;". Preenche sempre!
+      
       var setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
         "value"
@@ -106,7 +98,7 @@
 
   /* ------------------------------------------------- mensagem direta ------ */
 
-  browser.runtime.onMessage.addListener((msg) => {
+  browser.runtime.onMessage.addListener(function (msg) {
     if (msg && msg.type === "INJECT_OCR_TEXT" && msg.text) {
       markConsumed();
       fillBox(msg.text);
@@ -130,7 +122,8 @@
     var n = 0;
     var iv = setInterval(function () {
       n++;
-      if (filled || n > 90) return clearInterval(iv);
+      // [FIX] Removemos a verificação "filled ||"
+      if (n > 90) return clearInterval(iv);
       try {
         browser.storage.local.get("lastExtraction").then(function (s) {
           var x = s.lastExtraction;
@@ -150,4 +143,39 @@
       } catch (e) {}
     }, 1000);
   })();
+
+  /* ─────────────────────────────────────────────────────────────────────
+   * Ponte site → extensão
+   * ───────────────────────────────────────────────────────────────────── */
+
+  try {
+    document.documentElement.setAttribute("data-offset-ext", "1");
+  } catch (e) {}
+
+  window.addEventListener("message", function (ev) {
+    if (ev.source !== window) return;
+    if (!ev.data || ev.data.type !== "OFFSET_LENS_EXTRACT") return;
+
+    var imageUrl = String(ev.data.url || "").trim();
+    var query = String(ev.data.query || "").trim();
+    if (!imageUrl) return;
+
+    log("pedido do site → abrir Lens:", imageUrl);
+
+    try {
+      browser.runtime.sendMessage({
+        type: "LENS_SEARCH_IMAGE",
+        url: imageUrl,
+        query: query || undefined
+      }).then(function (resp) {
+        log("background respondeu:", resp);
+      }).catch(function (e) {
+        log("sendMessage (promise) falhou:", e);
+      });
+    } catch (e) {
+      log("sendMessage falhou:", e);
+    }
+  });
+
+  log("ponte site↔extensão ativa (data-offset-ext=1)");
 })();

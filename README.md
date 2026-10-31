@@ -1,4 +1,6 @@
-# Offset RP — Lens AI Extractor **v5.2.0** (corrigido)
+# Offset RP — Lens AI Extractor **v5.5.0**
+
+> **v5.5.0 (base 5.4.2 do AMO):** corrige a extração de quantidades grandes. O parser descartava valores acima de **99 999** e só lia 5 dígitos, por isso `Dinheiro: x100000000`, `Saco Dinheiro: x48227484` e `Dinheiro: x40116586` desapareciam. Agora aceita até **15 dígitos / 1e15**, **não deduplica** pilhas repetidas (4× Dinheiro, 2× Dinheiro 100 000 000), filtra etiquetas de UI (`Loot Table Config`, `Better Loot`, `Config`, texto cortado com `...`) e a query obriga o AI Overview a listar todas as pilhas sem juntar/somar. Mantém as correções da 5.4.x: parâmetros multimodais, parser estruturado, acessórios e envio imediato para a calculadora.
 
 > **v5.2.0:** o «falta clicar o botão de search» está resolvido a sério. O botão do Lens **não tem aria-label nem texto** — é só o ícone Material de lupa. A extensão identifica-o pelo **path do próprio SVG** (`M784-120…`), procura-o primeiro dentro do contentor da caixa e depois na página inteira, e **retenta a submissão até 10×** se o clique não navegar à primeira. A caixa certa também é escolhida pela proximidade ao botão (não textareas escondidas de outros widgets).
 
