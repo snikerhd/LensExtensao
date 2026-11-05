@@ -1,4 +1,6 @@
-# Offset RP — Lens AI Extractor **v5.5.0**
+# Offset RP — Lens AI Extractor **v5.6.0**
+
+> **v5.6.0:** corrige a duplicação do parser no separador Relatório. A extensão entregava o mesmo texto duas vezes (mensagem direta + fallback por storage), e o site acrescentava as linhas duas vezes. Agora o `site-inject.js` ignora entregas idênticas em menos de 4s e o background marca o storage como consumido depois de uma entrega direta bem-sucedida.
 
 > **v5.5.0 (base 5.4.2 do AMO):** corrige a extração de quantidades grandes. O parser descartava valores acima de **99 999** e só lia 5 dígitos, por isso `Dinheiro: x100000000`, `Saco Dinheiro: x48227484` e `Dinheiro: x40116586` desapareciam. Agora aceita até **15 dígitos / 1e15**, **não deduplica** pilhas repetidas (4× Dinheiro, 2× Dinheiro 100 000 000), filtra etiquetas de UI (`Loot Table Config`, `Better Loot`, `Config`, texto cortado com `...`) e a query obriga o AI Overview a listar todas as pilhas sem juntar/somar. Mantém as correções da 5.4.x: parâmetros multimodais, parser estruturado, acessórios e envio imediato para a calculadora.
 

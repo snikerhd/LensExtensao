@@ -1,5 +1,8 @@
 /* ============================================================================
- * site-inject.js — v5.1.2
+ * site-inject.js — v5.6.0
+ * v5.6.0: FIX — A extensão entregava o mesmo texto duas vezes (mensagem direta
+ *         + fallback por storage), o que duplicava o parser no Relatório.
+ *         Agora entregas idênticas em menos de 4s são ignoradas.
  * v5.1.2: FIX — Removida a variável "filled" que impedia a injeção de texto
  *         na segunda vez que se usava o Lens sem recarregar a página.
  * ==========================================================================*/
@@ -7,8 +10,10 @@
   "use strict";
 
   var TAG = "[SiteInject]";
-  var VERSION = "5.1.2";
+  var VERSION = "5.6.0";
   var PICKUP_TTL = 10 * 60 * 1000;
+  // Última entrega, para não preencher/clicar duas vezes com o mesmo texto.
+  var lastDelivery = { text: "", at: 0 };
 
   function log() {
     var args = [].slice.call(arguments);
@@ -66,6 +71,14 @@
       log("sem texto para colar — calculadora aberta em modo manual.");
       return;
     }
+    // Mensagem direta e fallback por storage podem chegar quase juntos.
+    // Ignora a segunda entrega do MESMO texto para não duplicar o parser.
+    var now = Date.now();
+    if (text === lastDelivery.text && now - lastDelivery.at < 4000) {
+      log("entrega duplicada ignorada (mensagem + storage)");
+      return;
+    }
+    lastDelivery = { text: text, at: now };
     var tries = 0;
     (function attempt() {
       tries++;

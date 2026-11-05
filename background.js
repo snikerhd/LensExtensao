@@ -1,6 +1,8 @@
 /* ============================================================================
- * background.js — v5.5.0
+ * background.js — v5.6.0
  * Base: v5.4.2 aprovada no AMO (envia o texto imediatamente, com retry).
+ * v5.6.0: após entregar a mensagem direta, marca o storage como consumido
+ *         para o fallback não voltar a injetar o mesmo texto (duplicação).
  * v5.5.0: migra a query antiga para a nova, que obriga a listar todas as
  *         pilhas sem juntar/somar/deduplicar e a manter quantidades em milhões.
  * ==========================================================================*/
@@ -126,6 +128,11 @@ async function deliverToSite(text, opts) {
           text: text
         });
         clearInterval(timer);
+        // Mensagem entregue: marca o storage como consumido para o fallback
+        // não voltar a injetar o mesmo texto (duplicava o parser no site).
+        try {
+          await browser.storage.local.set({ lastExtraction: { ...payload, consumed: true } });
+        } catch (e) {}
         console.log("[BG] texto entregue à calculadora (tentativa " + attempts + ")");
       } catch (e) {
         if (attempts >= 12) {
