@@ -1,5 +1,9 @@
 /* ============================================================================
- * site-inject.js — v5.6.0
+ * site-inject.js — v5.7.0
+ * v5.7.0: parser escolhe o bloco com mais linhas de inventário (":", munições,
+ *         acessórios) e filtra lixo de resultados relacionados (apps, guias,
+ *         battle pass). Antes, um bloco pequeno de lixo (2 linhas) vencia o
+ *         inventário real só por ser o primeiro.
  * v5.6.0: FIX — A extensão entregava o mesmo texto duas vezes (mensagem direta
  *         + fallback por storage), o que duplicava o parser no Relatório.
  *         Agora entregas idênticas em menos de 4s são ignoradas.
@@ -10,7 +14,7 @@
   "use strict";
 
   var TAG = "[SiteInject]";
-  var VERSION = "5.6.0";
+  var VERSION = "5.7.0";
   var PICKUP_TTL = 10 * 60 * 1000;
   // Última entrega, para não preencher/clicar duas vezes com o mesmo texto.
   var lastDelivery = { text: "", at: 0 };

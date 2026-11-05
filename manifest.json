@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Offset RP - Lens AI Extractor",
-  "version": "5.6.0",
+  "version": "5.7.0",
   "description": "Abre a imagem no Google Lens, anexa a query multimodal, extrai os itens do AI Overview e envia-os para a calculadora OFFSET RP.",
   "icons": {
     "48": "icon.svg",

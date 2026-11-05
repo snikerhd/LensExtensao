@@ -1,6 +1,8 @@
 /* ============================================================================
- * background.js — v5.6.0
+ * background.js — v5.7.0
  * Base: v5.4.2 aprovada no AMO (envia o texto imediatamente, com retry).
+ * v5.7.0: parser (lens-extract.js) prefere o bloco de inventário e filtra
+ *         resultados relacionados/anúncios.
  * v5.6.0: após entregar a mensagem direta, marca o storage como consumido
  *         para o fallback não voltar a injetar o mesmo texto (duplicação).
  * v5.5.0: migra a query antiga para a nova, que obriga a listar todas as

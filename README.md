@@ -1,4 +1,6 @@
-# Offset RP — Lens AI Extractor **v5.6.0**
+# Offset RP — Lens AI Extractor **v5.7.0**
+
+> **v5.7.0:** corrige a captura de lixo em vez do inventário. O parser devolvia o **primeiro** bloco com ≥2 itens, por isso um bloco pequeno de resultados relacionados (`… - Apps on Google Play - 7`, `… Battle Pass … - 2`) vencia o inventário real. Agora avalia todos os blocos e escolhe o que tem mais linhas de inventário (`:` , `munições`, `acessórios`), e filtra explicitamente títulos de apps/guias/vídeos/jogos. O fallback para o `body` só é usado quando nenhum bloco tem linhas fortes.
 
 > **v5.6.0:** corrige a duplicação do parser no separador Relatório. A extensão entregava o mesmo texto duas vezes (mensagem direta + fallback por storage), e o site acrescentava as linhas duas vezes. Agora o `site-inject.js` ignora entregas idênticas em menos de 4s e o background marca o storage como consumido depois de uma entrega direta bem-sucedida.
 

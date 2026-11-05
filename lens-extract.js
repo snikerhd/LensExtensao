@@ -294,6 +294,17 @@ Responde apenas com a lista formatada.`;
     "i"
   );
 
+  /* Junk que aparece no meio/fim de resultados relacionados (apps, vídeos,
+   * guias). Não é ancorado ao início porque o título vem antes da palavra. */
+  var RE_JUNK_ANY = new RegExp(
+    "apps?\\s+on\\s+google\\s+play|google\\s+play|play\\s+store|" +
+      "battle\\s*pass|b[öo]l[üu]m|hwarang|\\byeni\\b|daily\\s+diamond|" +
+      "\\bguide\\b|\\bguia\\b|\\btutorial\\b|gameplay|youtube|" +
+      "download|descarregar|\\bapk\\b|wiki|reddit|discord|" +
+      "subscreve|subscribe|assistir|ver agora|baixar|instalar",
+    "i"
+  );
+
   /* Nomes cortados pela UI ("...", "…") não são itens — são etiquetas
    * truncadas (ex.: "Loot Table Config (Better Loot V4 Compatible ..."). */
   function isTruncatedUiLabel(name) {
@@ -317,7 +328,7 @@ Responde apenas com a lista formatada.`;
     if (name.length < 2 || name.length > 90) return null;
     if (!hasLetter(name)) return null;
     if (isTruncatedUiLabel(name)) return null;
-    if (RE_JUNK.test(name)) return null;
+    if (RE_JUNK.test(name) || RE_JUNK_ANY.test(name)) return null;
     return name + " - " + n;
   }
 
@@ -330,7 +341,7 @@ Responde apenas com a lista formatada.`;
     if (!line || line.length > 140) return null;
     line = line.replace(RE_BULLETS, "").trim();
     if (line.length < 2) return null;
-    if (RE_JUNK.test(line)) return null;
+    if (RE_JUNK.test(line) || RE_JUNK_ANY.test(line)) return null;
 
     var m;
 
@@ -371,7 +382,7 @@ Responde apenas com a lista formatada.`;
     return txt.split(/\r?\n+/);
   }
 
-  function parseLines(lines, seen, out) {
+  function parseLines(lines, seen, out, stats) {
     for (var i = 0; i < lines.length; i++) {
       // 1) Item principal (Arma, Munições, Dinheiro, etc.)
       var item = parseItemLine(lines[i]);
@@ -381,6 +392,15 @@ Responde apenas com a lista formatada.`;
          * isso cada pilha tem de chegar lá. Duplicados de polling não entram
          * porque só se envia quando o texto estabiliza. */
         out.push(item);
+        if (stats) {
+          stats.total++;
+          /* Linhas com ":" ou munições/acessórios são quase sempre do
+           * inventário (a query pede "Nome: xQtd"). Linhas só com "-"
+           * podem ser resultados relacionados/anúncios. */
+          if (/[:]/.test(lines[i]) || /muni[çc]|acess[oó]ri/i.test(lines[i])) {
+            stats.strong++;
+          }
+        }
       }
 
       // 2) Acessórios no final da linha (ex: "| 1 acessório")
@@ -405,19 +425,35 @@ Responde apenas com a lista formatada.`;
       ".kp-blk",
       "#center_col"
     ];
+    var best = [];
+    var bestScore = -1;
     for (var s = 0; s < scopes.length; s++) {
       var el = document.querySelector(scopes[s]);
       if (el && el.offsetParent !== null) {
-        var seen = {};
         var out = [];
-        parseLines(linesFrom(el), seen, out);
-        if (out.length >= 2) return out;
+        var stats = { total: 0, strong: 0 };
+        parseLines(linesFrom(el), {}, out, stats);
+        /* Prioriza o bloco com mais linhas "de inventário" (com ":" ou
+         * munições/acessórios). Assim um bloco pequeno de resultados
+         * relacionados (ex.: "… - Apps on Google Play - 7") não ganha ao
+         * inventário verdadeiro. */
+        var score = stats.strong * 100 + stats.total;
+        if (score > bestScore) {
+          bestScore = score;
+          best = out;
+        }
       }
     }
-    var seenAll = {};
-    var outAll = [];
-    if (document.body) parseLines(linesFrom(document.body), seenAll, outAll);
-    return outAll;
+    /* Só cai para o body se nenhum scope tiver linhas fortes (inventário).
+     * Evita escolher o body inteiro (com resultados relacionados) quando já
+     * temos o bloco certo. */
+    if (bestScore < 100 && document.body) {
+      var outAll = [];
+      var statsAll = { total: 0, strong: 0 };
+      parseLines(linesFrom(document.body), {}, outAll, statsAll);
+      if (statsAll.strong * 100 + statsAll.total > bestScore) best = outAll;
+    }
+    return best;
   }
 
   function consentLoop() {
