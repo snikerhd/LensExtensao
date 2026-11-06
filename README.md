@@ -1,4 +1,6 @@
-# Offset RP — Lens AI Extractor **v5.7.0**
+# Offset RP — Lens AI Extractor **v5.8.0**
+
+> **v5.8.0:** armas com **0 munições** deixam de ser descartadas. O parser agora envia `Nome - 0 munições` e o site conta cada uma como **1 arma**, sem somar munição (não dispara a coima de Posse de Munição). Ex.: `SNS Pistol MK2: 0 munições` ×3 e `Combat PDW: 0 munições` passam a entrar no cálculo.
 
 > **v5.7.0:** corrige a captura de lixo em vez do inventário. O parser devolvia o **primeiro** bloco com ≥2 itens, por isso um bloco pequeno de resultados relacionados (`… - Apps on Google Play - 7`, `… Battle Pass … - 2`) vencia o inventário real. Agora avalia todos os blocos e escolhe o que tem mais linhas de inventário (`:` , `munições`, `acessórios`), e filtra explicitamente títulos de apps/guias/vídeos/jogos. O fallback para o `body` só é usado quando nenhum bloco tem linhas fortes.
 

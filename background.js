@@ -1,6 +1,7 @@
 /* ============================================================================
- * background.js — v5.7.0
+ * background.js — v5.8.0
  * Base: v5.4.2 aprovada no AMO (envia o texto imediatamente, com retry).
+ * v5.8.0: armas com "0 munições" passam a ser enviadas.
  * v5.7.0: parser (lens-extract.js) prefere o bloco de inventário e filtra
  *         resultados relacionados/anúncios.
  * v5.6.0: após entregar a mensagem direta, marca o storage como consumido

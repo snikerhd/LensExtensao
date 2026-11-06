@@ -1,5 +1,7 @@
 /* ============================================================================
- * site-inject.js — v5.7.0
+ * site-inject.js — v5.8.0
+ * v5.8.0: armas com "0 munições" passam a ser enviadas (o site conta 1
+ *         unidade sem somar munição).
  * v5.7.0: parser escolhe o bloco com mais linhas de inventário (":", munições,
  *         acessórios) e filtra lixo de resultados relacionados (apps, guias,
  *         battle pass). Antes, um bloco pequeno de lixo (2 linhas) vencia o
@@ -14,7 +16,7 @@
   "use strict";
 
   var TAG = "[SiteInject]";
-  var VERSION = "5.7.0";
+  var VERSION = "5.8.0";
   var PICKUP_TTL = 10 * 60 * 1000;
   // Última entrega, para não preencher/clicar duas vezes com o mesmo texto.
   var lastDelivery = { text: "", at: 0 };

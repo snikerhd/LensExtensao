@@ -1,6 +1,8 @@
 /* ============================================================================
- * lens-extract.js — v5.7.0
+ * lens-extract.js — v5.8.0
  * Base: v5.4.2 aprovada no AMO (multimodal + parser estruturado + acessórios).
+ * [FIX PK] Armas com "0 munições" deixam de ser descartadas: saem como
+ *          "Nome - 0 munições" e o site conta 1 unidade sem somar munição.
  * [FIX PK] Escolhe o bloco com mais linhas de inventário (":", munições,
  *          acessórios) e filtra lixo de resultados relacionados (apps, guias,
  *          battle pass). Antes, o primeiro bloco com 2 linhas de lixo vencia.
@@ -19,7 +21,7 @@
   "use strict";
 
   var TAG = "[LensExt]";
-  var VERSION = "5.7.0";
+  var VERSION = "5.8.0";
   var POLL_MS = 800;
   var MAX_POLLS = 100;
   var PENDING_TTL = 15 * 60 * 1000;
@@ -321,7 +323,7 @@ Responde apenas com a lista formatada.`;
     return /[a-záàâãäéèêëíìîïóòôõöúùûüçñ]/i.test(s);
   }
 
-  function fmt(name, qty) {
+  function fmt(name, qty, allowZeroAmmo) {
     name = String(name || "")
       .replace(/[\s]*[-–—:;(]+$/g, "")
       .replace(/^["'«]+|["'»]+$/g, "")
@@ -330,11 +332,14 @@ Responde apenas com a lista formatada.`;
     /* [FIX PK] Dinheiro de RP vai aos milhões/mil milhões. O limite antigo
      * (99999) descartava "Dinheiro - 100000000", "Saco Dinheiro - 48227484",
      * etc. Number continua exato até 2^53, por isso 1e15 é seguro. */
-    if (!isFinite(n) || n <= 0 || n > 1e15) return null;
+    if (!isFinite(n) || n < 0 || n > 1e15) return null;
     if (name.length < 2 || name.length > 90) return null;
     if (!hasLetter(name)) return null;
     if (isTruncatedUiLabel(name)) return null;
     if (RE_JUNK.test(name) || RE_JUNK_ANY.test(name)) return null;
+    /* Arma com 0 munições continua a ser uma arma: o site conta 1 unidade
+     * sem somar munição (não dispara a coima de Posse de Munição). */
+    if (n === 0) return allowZeroAmmo ? name + " - 0 munições" : null;
     return name + " - " + n;
   }
 
@@ -358,8 +363,9 @@ Responde apenas com a lista formatada.`;
     }
 
     // 1) Arma com munições: "Machine Pistol: 117 munições | 1 acessório"
+    //    Com 0 munições devolve "Nome - 0 munições" (o site conta a arma).
     m = line.match(/^(.{2,90}?)[\s]*[:][\s]*(?:x)?(\d{1,15})[\s]*muni[çc]/i);
-    if (m) return fmt(m[1], m[2]);
+    if (m) return fmt(m[1], m[2], true);
 
     // 2) "12x Nome" / "x12 Nome"
     m = line.match(/^x?\s*(\d{1,15})\s*x\s*[:.\-–—]?\s*(.{2,90})$/i);
