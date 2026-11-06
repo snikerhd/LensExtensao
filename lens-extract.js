@@ -1,6 +1,12 @@
 /* ============================================================================
- * lens-extract.js — v5.5.0
+ * lens-extract.js — v5.7.0
  * Base: v5.4.2 aprovada no AMO (multimodal + parser estruturado + acessórios).
+ * [FIX PK] Escolhe o bloco com mais linhas de inventário (":", munições,
+ *          acessórios) e filtra lixo de resultados relacionados (apps, guias,
+ *          battle pass). Antes, o primeiro bloco com 2 linhas de lixo vencia.
+ * [FIX PK] Só considera o texto estável para envio quando há sinal de
+ *          inventário (linha forte ou 4+ itens), evitando enviar o lixo antes
+ *          de o AI Overview terminar de gerar o inventário.
  * [FIX PK] Quantidades até 1e15 / 15 dígitos (dinheiro em milhões deixava de
  *          ser extraído pelo limite antigo de 99999 e pelos \d{1,5}).
  * [FIX PK] Não deduplica pilhas repetidas (4× "Dinheiro", 2× "Dinheiro -
@@ -13,7 +19,7 @@
   "use strict";
 
   var TAG = "[LensExt]";
-  var VERSION = "5.5.0";
+  var VERSION = "5.7.0";
   var POLL_MS = 800;
   var MAX_POLLS = 100;
   var PENDING_TTL = 15 * 60 * 1000;
@@ -414,6 +420,11 @@ Responde apenas com a lista formatada.`;
     }
   }
 
+  /* Estatísticas do último extractItems(): strong = linhas com sinal claro de
+   * inventário (":", munições, acessórios). Usado para não enviar lixo antes
+   * de o AI Overview gerar o inventário. */
+  var lastExtractStats = { strong: 0, total: 0 };
+
   function extractItems() {
     var scopes = [
       "#m-x-content",
@@ -427,6 +438,7 @@ Responde apenas com a lista formatada.`;
     ];
     var best = [];
     var bestScore = -1;
+    var bestStats = { strong: 0, total: 0 };
     for (var s = 0; s < scopes.length; s++) {
       var el = document.querySelector(scopes[s]);
       if (el && el.offsetParent !== null) {
@@ -441,6 +453,7 @@ Responde apenas com a lista formatada.`;
         if (score > bestScore) {
           bestScore = score;
           best = out;
+          bestStats = stats;
         }
       }
     }
@@ -451,8 +464,12 @@ Responde apenas com a lista formatada.`;
       var outAll = [];
       var statsAll = { total: 0, strong: 0 };
       parseLines(linesFrom(document.body), {}, outAll, statsAll);
-      if (statsAll.strong * 100 + statsAll.total > bestScore) best = outAll;
+      if (statsAll.strong * 100 + statsAll.total > bestScore) {
+        best = outAll;
+        bestStats = statsAll;
+      }
     }
+    lastExtractStats = bestStats;
     return best;
   }
 
@@ -548,12 +565,14 @@ Responde apenas com a lista formatada.`;
 
       var items = extractItems();
       var text = items.length ? items.join("\n") : "";
+      var hasInventorySignal =
+        lastExtractStats.strong > 0 || items.length >= 4;
 
-      if (text && text === lastText) stable++;
+      if (text && text === lastText && hasInventorySignal) stable++;
       else stable = 0;
       lastText = text;
 
-      if (!sent && text && stable >= 2 && tries >= 3) {
+      if (!sent && text && hasInventorySignal && stable >= 2 && tries >= 3) {
         sent = true;
         clearInterval(iv);
         clearPending();
